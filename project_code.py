@@ -71,12 +71,6 @@ while True:
             pass
         print("Bluetooth is connected")
         ble.stop_advertising()
-        #else: #if ble.advertising = False
-            #print("ble.advertising is False")
-            #ble.start_advertising(advertisement)
-            #last_advertising_time = time.monotonic()
-          
-    # print("ble.advertising",ble.advertising)
     
 
     while ble.connected:
@@ -84,10 +78,10 @@ while True:
         x, y, z = cp.acceleration
         try: 
             
-            current_time = time.time()
+            current_time = time.monotonic()
             current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
 
-            # Step detection logic
+            # Step counting 
             if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (current_time - last_step_time) > debounce_time:
                 step_count += 1
                 print(f"Step Count:{step_count},{time.monotonic()}")
@@ -97,14 +91,16 @@ while True:
             last_acceleration_magnitude = current_acceleration_magnitude
 
             # Audio feedback logic based on step count and inactivity
+            # Audio feedback for activity
             if step_count >= 10 and not yes_sound_played:
                 cp.play_file("yes_move.wav")
                 yes_sound_played = True
-                print("Congrats, you moved!")  # Audio feedback for activity
+                print("Congrats, you moved!")  
+                # Audio feedback for inactivity
             elif time.monotonic() - last_step_time > 300 and not no_sound_played:
                 cp.play_file("no_move.wav")
                 no_sound_played = True
-                print("Why haven't you moved all day?")  # Audio feedback for inactivity
+                print("Why haven't you moved all day?")  
 
             time.sleep(0.1)
 
