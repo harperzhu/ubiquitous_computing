@@ -70,18 +70,16 @@ while True:
     if not ble.connected:
         print("1")
         # Only start advertising if not already doing so.
-        if not ble.advertising:
-            print("2")
+        if ble.advertising:
+            ble.stop_advertising()
+            print("Bluetooth is Connected!")
+        else: #if ble.advertising = False
             print("Waiting for a Bluetooth connection...")
             ble.start_advertising(advertisement)
             last_advertising_time = time.monotonic()
         continue  # Skip the rest of the loop while waiting for connection.
 
-    # If the code reaches here, it means the device has just connected.
-    if ble.advertising:
-        # Ensure advertising is stopped once connected.
-        ble.stop_advertising()
-    print("Bluetooth is Connected!")
+
     
     while ble.connected:
         x, y, z = cp.acceleration

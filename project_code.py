@@ -1,13 +1,21 @@
-from adafruit_circuitplayground import cp
 import time
+from adafruit_circuitplayground import cp
+from adafruit_ble import BLERadio
+from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
+from adafruit_ble.services.nordic import UARTService
 
+# Initialize BLE for Bluetooth connectivity
+ble = BLERadio()
+ble.name = "Harper's Step Counter"
+uart_server = UARTService()
+advertisement = ProvideServicesAdvertisement(uart_server)
 # Threshold to detect a step
-minimum_step_threshold = 10  # Adjust based on testing
+minimum_step_threshold = 10  
 
 # Variables to keep track of steps and the last acceleration magnitude
 step_count = 0
 last_acceleration_magnitude = 0
-last_step_time = 0
+last_step_time = time.time()
 yes_sound_played = False
 no_sound_played = False
 
@@ -34,7 +42,7 @@ def calibrate_debounce_time():
     x, y, z = cp.acceleration
     last_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
 
-    while len(step_times) < 10:
+    while len(step_times) < 2:
         x, y, z = cp.acceleration
         current_time = time.time()
         current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
@@ -50,33 +58,58 @@ def calibrate_debounce_time():
     # Calculate average debounce time
     return sum(debounce_times) / len(debounce_times) if debounce_times else 0
 
-
 debounce_time = calibrate_debounce_time()
 print(f"Calibration Complete: Debounce time = {debounce_time:.2f} seconds")
-last_step_time = time.time()
 
 print("Now counting steps. Start walking!")
+last_advertising_time = time.monotonic()  # Track the last time we started advertising
+
 
 while True:
-    x, y, z = cp.acceleration
-    current_time = time.time()
-    current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
-
-    # Check if a step is detected and if sufficient time has passed based on calibrated debounce time
-    if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (current_time - last_step_time) > debounce_time:
-        global last_monotonic_time = time.time()
-        step_count += 1
-        print(f"Step Count:,{time.time()},{step_count}")
-        
-        last_step_time = current_time  # Update the time when the last step was detected
-
-    last_acceleration_magnitude = current_acceleration_magnitude
-    time.sleep(0.1)
+    if not ble.connected:
+        ble.start_advertising(advertisement)
+        # Only start advertising if not already doing so.
+        while not ble.connected:
+            pass
+        print("Bluetooth is connected")
+        ble.stop_advertising()
+        #else: #if ble.advertising = False
+            #print("ble.advertising is False")
+            #ble.start_advertising(advertisement)
+            #last_advertising_time = time.monotonic()
+          
+    # print("ble.advertising",ble.advertising)
     
-    if step_count > 1 and not yes_sound_played:
-        print("Playing sound file for reaching 1 steps.")  # Debugging print
-        cp.play_file("yes_move.wav")
-        yes_sound_played = True
-    else if time.monotonic() - last_monotonic_time > 10 and not no_sound_played:
-        cp.play_file("yes_move.wav")
-        no_sound_played = True
+
+    while ble.connected:
+        
+        x, y, z = cp.acceleration
+        try: 
+            current_time = time.time()
+            current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
+
+            # Step detection logic
+            if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (current_time - last_step_time) > debounce_time:
+                step_count += 1
+                print(f"Step Count:,{time.time()},{step_count}")
+                last_step_time = current_time  # Update the time when the last step was detected
+
+            last_acceleration_magnitude = current_acceleration_magnitude
+
+            # Audio feedback logic based on step count and inactivity
+            if step_count >= 10 and not yes_sound_played:
+                cp.play_file("yes_move.wav")
+                yes_sound_played = True
+                print("Congrats, you moved!")  # Audio feedback for activity
+            elif time.monotonic() - last_step_time > 300 and not no_sound_played:
+                cp.play_file("no_move.wav")
+                no_sound_played = True
+                print("Why haven't you moved all day?")  # Audio feedback for inactivity
+
+            time.sleep(0.1)
+
+        except ConnectionError:
+            print("Bluetooth is disconnected")
+            continue
+            
+            
