@@ -1,45 +1,114 @@
-import board, time
-from adafruit_apds9960.apds9960 import APDS9960
+import time
+from adafruit_circuitplayground import cp
 from adafruit_ble import BLERadio
 from adafruit_ble.advertising.standard import ProvideServicesAdvertisement
-from adafruit_ble.services.standard.hid import HIDService
-from adafruit_hid.keyboard import Keyboard, Keycode
+from adafruit_ble.services.nordic import UARTService
 
-i2c = board.I2C()
-apds = APDS9960(i2c)
-apds.enable_proximity = True
-#apds.enable_gesture = True
-
+# Initialize BLE for Bluetooth connectivity
 ble = BLERadio()
-hid = HIDService()
-advertisement = ProvideServicesAdvertisement(hid)
-advertisement.complete_name = "Harper's Keyboard"
-keyboard = Keyboard(hid.devices)
+ble.name = "Harper's Step Counter"
+uart_server = UARTService()
+advertisement = ProvideServicesAdvertisement(uart_server)
+# Threshold to detect a step
+minimum_step_threshold = 10  
+
+# Variables to keep track of steps and the last acceleration magnitude
+step_count = 0
+last_acceleration_magnitude = 0
+last_step_time = time.time()
+yes_sound_played = False
+no_sound_played = False
+
+def calculate_magnitude(x, y, z):
+    """Calculate the magnitude of the acceleration vector."""
+    return (x**2 + y**2 + z**2) ** 0.5
+
+def calibrate_gravity():
+    """Calibrate for gravity by taking initial measurements."""
+    print("Calibrating... Please keep the device stationary.")
+    measurements = [calculate_magnitude(*cp.acceleration) for _ in range(10)]
+    return sum(measurements) / len(measurements)
+
+gravity_magnitude = calibrate_gravity()
+print(f"Calibration Complete: Gravity = {gravity_magnitude}")
+
+def calibrate_debounce_time():
+    global last_step_time, last_acceleration_magnitude  # Include last_acceleration_magnitude if you plan to update it globally
+    print("Start walking... We will calibrate the debounce time. Take at least 10 steps at a normal pace.")
+    debounce_times = []
+    step_times = []  # Collect timestamps of each detected step
+
+    # Initialize last_acceleration_magnitude with the first reading
+    x, y, z = cp.acceleration
+    last_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
+
+    while len(step_times) < 10:
+        x, y, z = cp.acceleration
+        current_time = time.time()
+        current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
+        if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (not step_times or current_time - step_times[-1] > 1):
+            step_times.append(current_time)
+            if len(step_times) > 1:
+                # Calculate the time difference between the last step and the current step
+                debounce_times.append(step_times[-1] - step_times[-2])
+        
+        last_acceleration_magnitude = current_acceleration_magnitude
+        time.sleep(0.1)
+
+    # Calculate average debounce time
+    return sum(debounce_times) / len(debounce_times) if debounce_times else 0
+
+debounce_time = calibrate_debounce_time()
+print(f"Calibration Complete: Debounce time = {debounce_time:.2f} seconds")
+
+print("Now counting steps. Start walking!")
+last_advertising_time = time.monotonic()  # Track the last time we started advertising
+
+
 while True:
     
-    ble.start_advertising(advertisement)
-    while not ble.connected:
-        pass
-    ble.stop_advertising()
-    print("\nConnected!")
+    if not ble.connected:
+        print("1")
+        # Only start advertising if not already doing so.
+        if not ble.advertising:
+            print("2")
+            print("Waiting for a Bluetooth connection...")
+            ble.start_advertising(advertisement)
+            last_advertising_time = time.monotonic()
+        continue  # Skip the rest of the loop while waiting for connection.
+
+    # If the code reaches here, it means the device has just connected.
+    if ble.advertising:
+        # Ensure advertising is stopped once connected.
+        ble.stop_advertising()
+    print("Bluetooth is Connected!")
     
     while ble.connected:
-        gesture = apds.gesture()
-        try:
-            print(apds.proximity)
-            if gesture == 0x01: # Up
-                print("Up")
-                keyboard.send(Keycode.UP_ARROW)
-            elif gesture == 0x02: # Down
-                print("Down")
-                keyboard.send(Keycode.DOWN_ARROW)
-            elif gesture == 0x03: # Left
-                print("Left")
-                keyboard.send(Keycode.LEFT_ARROW)
-            elif gesture == 0x04: # Right
-                print("Right")
-                keyboard.send(Keycode.RIGHT_ARROW)
-            time.sleep(1)
-        except ConnectionEror:
-            print("\nDisconnected!")
-            break
+        x, y, z = cp.acceleration
+        try: 
+            current_time = time.time()
+            current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
+
+            # Step detection logic
+            if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (current_time - last_step_time) > debounce_time:
+                step_count += 1
+                print(f"Step Count:,{time.time()},{step_count}")
+                last_step_time = current_time  # Update the time when the last step was detected
+
+            last_acceleration_magnitude = current_acceleration_magnitude
+
+            # Audio feedback logic based on step count and inactivity
+            if step_count >= 10 and not yes_sound_played:
+                cp.play_file("yes_move.wav")
+                yes_sound_played = True
+                print("Congrats, you moved!")  # Audio feedback for activity
+            elif time.monotonic() - last_step_time > 300 and not no_sound_played:
+                cp.play_file("no_move.wav")
+                no_sound_played = True
+                print("Why haven't you moved all day?")  # Audio feedback for inactivity
+
+            time.sleep(0.1)
+        except ConnectionError:
+            print("Bluetooth is disconnected")
+            continue
+            
