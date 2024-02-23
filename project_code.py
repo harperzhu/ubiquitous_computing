@@ -9,10 +9,8 @@ ble = BLERadio()
 ble.name = "Harper's Step Counter"
 uart_server = UARTService()
 advertisement = ProvideServicesAdvertisement(uart_server)
-# Threshold to detect a step
 minimum_step_threshold = 10  
 
-# Variables to keep track of steps and the last acceleration magnitude
 step_count = 0
 last_acceleration_magnitude = 0
 last_step_time = time.time()
@@ -33,10 +31,10 @@ gravity_magnitude = calibrate_gravity()
 print(f"Calibration Complete: Gravity = {gravity_magnitude}")
 
 def calibrate_debounce_time():
-    global last_step_time, last_acceleration_magnitude  # Include last_acceleration_magnitude if you plan to update it globally
+    global last_step_time, last_acceleration_magnitude  
     print("Start walking... We will calibrate the debounce time. Take at least 10 steps at a normal pace.")
     debounce_times = []
-    step_times = []  # Collect timestamps of each detected step
+    step_times = []  
 
     # Initialize last_acceleration_magnitude with the first reading
     x, y, z = cp.acceleration
@@ -85,13 +83,15 @@ while True:
         
         x, y, z = cp.acceleration
         try: 
+            
             current_time = time.time()
             current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
 
             # Step detection logic
             if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (current_time - last_step_time) > debounce_time:
                 step_count += 1
-                print(f"Step Count:,{time.time()},{step_count}")
+                print(f"Step Count:{step_count},{time.monotonic()}")
+                uart_server.write(f"Step Count:{step_count},{time.monotonic()}\n")
                 last_step_time = current_time  # Update the time when the last step was detected
 
             last_acceleration_magnitude = current_acceleration_magnitude
