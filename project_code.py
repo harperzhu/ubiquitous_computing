@@ -13,7 +13,7 @@ minimum_step_threshold = 10
 
 step_count = 0
 last_acceleration_magnitude = 0
-last_step_time = time.time()
+last_step_time = time.monotonic()
 yes_sound_played = False
 no_sound_played = False
 
@@ -42,7 +42,7 @@ def calibrate_debounce_time():
 
     while len(step_times) < 2:
         x, y, z = cp.acceleration
-        current_time = time.time()
+        current_time = time.monotonic()
         current_acceleration_magnitude = calculate_magnitude(x, y, z) - gravity_magnitude
         if abs(current_acceleration_magnitude - last_acceleration_magnitude) > minimum_step_threshold and (not step_times or current_time - step_times[-1] > 1):
             step_times.append(current_time)
